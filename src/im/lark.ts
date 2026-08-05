@@ -2,7 +2,7 @@
  * @Author: coderxixi 976344695@qq.com
  * @Date: 2026-08-04 15:49:50
  * @LastEditors: coderxixi 976344695@qq.com
- * @LastEditTime: 2026-08-05 14:33:14
+ * @LastEditTime: 2026-08-05 14:58:20
  * @FilePath: /agentOS/src/im/lark.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -11,6 +11,8 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 import { mkdir } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { parseMentions, type Mention } from "./message-parser.js";
+import type { CardJson } from "./card.ts";
+
 export interface IncomingMessage {
   messageId: string;
   chatId:string;
@@ -33,6 +35,8 @@ export interface BotOptions {
 export interface Bot {
   client:Lark.Client;
   reply: (messageId: string, text: string, replyInThread?: boolean) => Promise<void>;
+  replyCard: (messageId: string, card: CardJson, replyInThread?: boolean) =>
+    Promise<string | undefined>;
   downloadResource: (
     messageId: string,
     fileKey: string,
@@ -40,6 +44,7 @@ export interface Bot {
     saveDir: string,
     fileName?: string,
   ) => Promise<string>;
+  updateCard: (messageId: string, card: CardJson) => Promise<void>;
 }
 
 
@@ -112,6 +117,23 @@ export function startBot(opts: BotOptions): Bot {
         },
       });
       return res.data?.message_id;
+    },
+    async replyCard(messageId, card, replyInThread = false) {
+      const res = await client.im.v1.message.reply({
+        path: { message_id: messageId },
+        data: {
+          msg_type: 'interactive',
+          content: JSON.stringify(card),
+          ...(replyInThread ? { reply_in_thread: true } : {}),
+        },
+      });
+      return res.data?.message_id;
+    },
+    async updateCard(messageId, card) {
+      await client.im.v1.message.patch({
+        path: { message_id: messageId },
+        data: { content: JSON.stringify(card) },
+      });
     },
     async downloadResource(messageId, fileKey, type, saveDir, fileName) {
       const res = await client.im.v1.messageResource.get({
