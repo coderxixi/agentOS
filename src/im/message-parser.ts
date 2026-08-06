@@ -21,7 +21,7 @@ export function parseMentions(raw: any[]|undefined): Mention[] {
 
 /**把 @ _user_N 占位符替换成@ 显示名 */
 
-export function resloveMentions(text:string,mentions:Mention[]):string {
+export function resolveMentions(text:string,mentions:Mention[]):string {
 let  resolved=text;
   for (const m of mentions) {
     resolved = resolved.replaceAll(m.key, `@${m.name}`);
