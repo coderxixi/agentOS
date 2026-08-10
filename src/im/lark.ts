@@ -1,42 +1,61 @@
-/*
- * @Author: coderxixi 976344695@qq.com
- * @Date: 2026-08-04 15:49:50
- * @LastEditors: coderxixi 976344695@qq.com
- * @LastEditTime: 2026-08-05 14:58:20
- * @FilePath: /agentOS/src/im/lark.ts
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+/**
+ * 飞书接入：WS 长连接收消息 + REST 回消息。
  */
-
 import * as Lark from '@larksuiteoapi/node-sdk';
 import { mkdir } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { parseMentions, type Mention } from "./message-parser.js";
-import type { CardJson } from "./card.ts";
+import { parseMentions, type Mention } from './message-parser.js';
+import type { CardJson } from './card.js';
 
 export interface IncomingMessage {
   messageId: string;
-  chatId:string;
-  chatType: string; //群聊类型 'p2p' 单聊 | 'group' 群聊,
-  messageType: string; //消息类型 'text' 文本 | 'image' 图片 | 'file' 文件 | 'audio' 音频 | 'video' 视频 | 'location' 位置 | 'link' 链接 | 'sticker' 表情 | 'interactive' 交互式 | 'share' 分享 | 'recall' 撤回 | 'mention' 提及 | 'custom' 自定义 | 'system' 系统 | 'event' 事件 | 'other' 其他
-  text:string;
-  senderOpenId:string;
-  rootId:string;
-  threadId:string;
+  chatId: string;
+  chatType: string;
+  messageType: string;
+  text: string;
+  rootId: string;
+  threadId: string;
+  senderOpenId: string;
   mentions: Mention[];
   rawContent: string;
- 
 }
+
 export interface BotOptions {
   appId: string;
   appSecret: string;
-  onMessage: (message: IncomingMessage) => void;
-} 
+  onMessage: (msg: IncomingMessage, bot: Bot) => Promise<void>;
+  onCardAction?: (action: CardAction) => Promise<CardActionResponse | undefined>;
+}
+
+export interface CardAction {
+  operatorOpenId: string;
+  messageId: string;
+  value: Record<string, unknown>;
+}
+
+export interface CardActionResponse {
+  toast?: { type: 'success' | 'info' | 'warning' | 'error'; content: string };
+  card?: { type: 'raw'; data: CardJson };
+}
+
+export function parseCardAction(data: any): CardAction {
+  const value = data?.action?.value;
+  return {
+    operatorOpenId: data?.operator?.open_id
+      ?? data?.operator_id?.open_id
+      ?? '',
+    messageId: data?.context?.open_message_id
+      ?? data?.open_message_id
+      ?? '',
+    value: isRecord(value) ? value : {},
+  };
+}
 
 export interface Bot {
-  client:Lark.Client;
-  reply: (messageId: string, text: string, replyInThread?: boolean) => Promise<void>;
-  replyCard: (messageId: string, card: CardJson, replyInThread?: boolean) =>
-    Promise<string | undefined>;
+  client: Lark.Client;
+  reply: (messageId: string, text: string, replyInThread?: boolean) => Promise<string | undefined>;
+  replyCard: (messageId: string, card: CardJson, replyInThread?: boolean) => Promise<string | undefined>;
+  updateCard: (messageId: string, card: CardJson) => Promise<void>;
   downloadResource: (
     messageId: string,
     fileKey: string,
@@ -44,80 +63,83 @@ export interface Bot {
     saveDir: string,
     fileName?: string,
   ) => Promise<string>;
-  updateCard: (messageId: string, card: CardJson) => Promise<void>;
 }
 
-
-
 const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-  "image/bmp": "bmp",
-  "image/x-icon": "ico",
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+  'image/x-icon': 'ico',
 };
 
 function getHeader(headers: any, name: string): string {
-  const value =
-    typeof headers?.get === "function"
-      ? headers.get(name)
-      : (headers?.[name] ?? headers?.[name.toLowerCase()]);
-  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+  const value = typeof headers?.get === 'function'
+    ? headers.get(name)
+    : headers?.[name] ?? headers?.[name.toLowerCase()];
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 }
 
-function resourceExtension(
-  type: "image" | "file",
-  fileName: string | undefined,
-  contentType: string,
-): string {
-  const original = fileName ? extname(fileName).slice(1).toLowerCase() : "";
+function resourceExtension(type: 'image' | 'file', fileName: string | undefined, contentType: string): string {
+  const original = fileName ? extname(fileName).slice(1).toLowerCase() : '';
   if (/^[a-z0-9]{1,10}$/.test(original)) return original;
 
-  const mime = contentType.split(";", 1)[0].trim().toLowerCase();
-  return CONTENT_TYPE_EXTENSIONS[mime] ?? (type === "image" ? "img" : "bin");
+  const mime = contentType.split(';', 1)[0].trim().toLowerCase();
+  return CONTENT_TYPE_EXTENSIONS[mime] ?? (type === 'image' ? 'img' : 'bin');
 }
 
+interface PostElement {
+  tag?: string;
+  text?: string;
+  user_id?: string;
+}
 
+function renderPostElement(element: PostElement): string {
+  if (element.tag === 'at') return element.user_id ?? '';
+  if (element.tag === 'br') return '\n';
+  if (['text', 'a', 'code', 'code_block', 'md'].includes(element.tag ?? '')) {
+    return element.text ?? '';
+  }
+  return '';
+}
 
-function extractText(messageType:string,content:string):string {
- 
-  
+export function extractMessageText(messageType: string, content: string): string {
   const parsed = JSON.parse(content);
   if (messageType === 'text') {
     return parsed.text ?? '';
   }
-  if(messageType=== 'post'){
-    const paragtaphs: any[][] = parsed.content ??[];
-     return paragtaphs
-     .flat()
-     .filter((el)=>el.tag==='text')
-     .map((el)=>el.text)
-     .join('')
-     .trim()
+  if (messageType === 'post') {
+    const paragraphs: PostElement[][] = parsed.content ?? [];
+    return paragraphs
+      .map((paragraph) => paragraph.map(renderPostElement).join(''))
+      .filter(Boolean)
+      .join('\n')
+      .trim();
   }
-
-  return ''
+  return '';
 }
 
 export function startBot(opts: BotOptions): Bot {
-  const { appId, appSecret, onMessage } = opts;
+  const { appId, appSecret, onMessage, onCardAction } = opts;
 
   const client = new Lark.Client({ appId, appSecret });
 
   const bot: Bot = {
     client,
+
     async reply(messageId, text, replyInThread = false) {
       const res = await client.im.v1.message.reply({
         path: { message_id: messageId },
-        data: { 
-          msg_type: 'text', 
-          content: JSON.stringify({ text }) ,
+        data: {
+          msg_type: 'text',
+          content: JSON.stringify({ text }),
           ...(replyInThread ? { reply_in_thread: true } : {}),
         },
       });
       return res.data?.message_id;
     },
+
     async replyCard(messageId, card, replyInThread = false) {
       const res = await client.im.v1.message.reply({
         path: { message_id: messageId },
@@ -129,12 +151,14 @@ export function startBot(opts: BotOptions): Bot {
       });
       return res.data?.message_id;
     },
+
     async updateCard(messageId, card) {
       await client.im.v1.message.patch({
         path: { message_id: messageId },
         data: { content: JSON.stringify(card) },
       });
     },
+
     async downloadResource(messageId, fileKey, type, saveDir, fileName) {
       const res = await client.im.v1.messageResource.get({
         path: { message_id: messageId, file_key: fileKey },
@@ -147,10 +171,13 @@ export function startBot(opts: BotOptions): Bot {
       await res.writeFile(savePath);
       return savePath;
     },
-
   };
 
   const dispatcher = new Lark.EventDispatcher({}).register({
+    'card.action.trigger': async (data: any) => {
+      if (!onCardAction) return undefined;
+      return onCardAction(parseCardAction(data));
+    },
     'im.message.receive_v1': async (data) => {
       const m = data.message;
       const msg: IncomingMessage = {
@@ -158,10 +185,10 @@ export function startBot(opts: BotOptions): Bot {
         chatId: m.chat_id,
         chatType: m.chat_type,
         messageType: m.message_type,
-        text: extractText(m.message_type, m.content),
-        senderOpenId: data.sender.sender_id?.open_id ?? '',
+        text: extractMessageText(m.message_type, m.content),
         rootId: m.root_id ?? '',
         threadId: m.thread_id ?? '',
+        senderOpenId: data.sender.sender_id?.open_id ?? '',
         mentions: parseMentions(m.mentions),
         rawContent: m.content,
       };
@@ -175,4 +202,6 @@ export function startBot(opts: BotOptions): Bot {
   return bot;
 }
 
-
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
