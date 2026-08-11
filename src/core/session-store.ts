@@ -1,11 +1,3 @@
-/*
- * @Author: coderxixi 976344695@qq.com
- * @Date: 2026-08-06 10:44:39
- * @LastEditors: coderxixi 976344695@qq.com
- * @LastEditTime: 2026-08-06 10:44:45
- * @FilePath: /agentOS/src/core/session-store.ts
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
@@ -18,23 +10,58 @@ export interface SessionStore {
 
 const SessionSchema = z.object({
   id: z.string().min(1),
+  botId: z.string().min(1),
   threadId: z.string().min(1),
   chatId: z.string().min(1),
-  cliId: z.literal('claude'),
+  cliId: z.enum(['claude', 'codex']),
+  cliSessionId: z.string().min(1).optional(),
+  workspaceDir: z.string().min(1),
   status: z.enum(['creating', 'active', 'idle', 'closed']),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
 
 function recoverInterruptedSession(session: Session): Session {
-  if (session.status !== 'creating' && session.status !== 'active') return session;
+  if (session.status !== 'creating' && session.status !== 'active')
+    return session;
   return { ...session, status: 'idle' };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function migrateLegacySession(
+  row: unknown,
+  legacyBotId: string,
+  defaultWorkspaces: Readonly<Record<string, string>>,
+): { candidate: unknown; migrated: boolean } {
+  if (!isRecord(row)) return { candidate: row, migrated: false };
+
+  const needsBotId = !('botId' in row);
+  const needsWorkspace = !('workspaceDir' in row);
+  if (!needsBotId && !needsWorkspace) {
+    return { candidate: row, migrated: false };
+  }
+
+  const candidate: Record<string, unknown> = { ...row };
+  if (needsBotId) candidate.botId = legacyBotId;
+  const botId =
+    typeof candidate.botId === 'string' ? candidate.botId : legacyBotId;
+  if (needsWorkspace) {
+    candidate.workspaceDir = defaultWorkspaces[botId] ?? process.cwd();
+  }
+  return { candidate, migrated: true };
 }
 
 export class JsonSessionStore implements SessionStore {
   private writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly filePath: string) { }
+  constructor(
+    private readonly filePath: string,
+    private readonly legacyBotId = 'default',
+    private readonly defaultWorkspaces: Readonly<Record<string, string>> = {},
+  ) { }
 
   async load(): Promise<Session[]> {
     let content: string;
@@ -53,11 +80,17 @@ export class JsonSessionStore implements SessionStore {
     const sessions: Session[] = [];
     let needsCleanup = false;
     for (const row of rows) {
-      const result = SessionSchema.safeParse(row);
+      const { candidate, migrated } = migrateLegacySession(
+        row,
+        this.legacyBotId,
+        this.defaultWorkspaces,
+      );
+      const result = SessionSchema.safeParse(candidate);
       if (!result.success) {
         needsCleanup = true;
         continue;
       }
+      if (migrated) needsCleanup = true;
 
       const recovered = recoverInterruptedSession(result.data);
       if (recovered.status !== result.data.status) needsCleanup = true;

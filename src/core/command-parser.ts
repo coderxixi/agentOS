@@ -1,21 +1,32 @@
-/*
- * @Author: coderxixi 976344695@qq.com
- * @Date: 2026-08-06 10:35:35
- * @LastEditors: coderxixi 976344695@qq.com
- * @LastEditTime: 2026-08-06 10:35:43
- * @FilePath: /agentOS/src/core/command-parser.ts
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
-export type CommandName = 'close' | 'status' | 'help';
+import type { CliId } from '../cli/type.ts';
 
-export interface SlashCommand {
-  name: CommandName;
-}
+export type SlashCommand =
+  | { name: 'close' | 'status' | 'help' }
+  | { name: 'cd'; path?: string };
 
 const COMMAND_RE = /^(?:@.+\s+)?\/(close|status|help)\s*$/;
+const CD_RE = /^(?:@\S+\s+)?\/cd(?:\s+([\s\S]+?))?\s*$/;
+const CLI_REQUEST_RE = /^(?:@\S+\s+)?\/(claude|codex)(?:\s+([\s\S]*))?$/;
 
 export function parseCommand(text: string): SlashCommand | undefined {
-  const match = COMMAND_RE.exec(text.trim());
+  const value = text.trim();
+  const cdMatch = CD_RE.exec(value);
+  if (cdMatch) return { name: 'cd', path: cdMatch[1]?.trim() || undefined };
+  const match = COMMAND_RE.exec(value);
   if (!match) return undefined;
-  return { name: match[1] as CommandName };
+  return { name: match[1] as 'close' | 'status' | 'help' };
+}
+
+export interface CliRequest {
+  cliId: CliId;
+  prompt: string;
+}
+
+export function parseCliRequest(text: string): CliRequest | undefined {
+  const match = CLI_REQUEST_RE.exec(text.trim());
+  if (!match) return undefined;
+  return {
+    cliId: match[1] as CliId,
+    prompt: (match[2] ?? '').trim(),
+  };
 }
