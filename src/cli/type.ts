@@ -1,12 +1,18 @@
-/*
- * @Author: coderxixi 976344695@qq.com
- * @Date: 2026-08-10 08:38:33
- * @LastEditors: coderxixi 976344695@qq.com
- * @LastEditTime: 2026-08-11 14:59:53
- * @FilePath: /agentOS/src/cli/type.ts
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
+
 export type CliId = 'claude' | 'codex';
+
+export type CliCompactPlan =
+  | {
+    protocol: 'claude-stream-json';
+    command: string;
+    args: string[];
+  }
+  | {
+    protocol: 'codex-app-server';
+    command: string;
+    args: string[];
+    sessionId: string;
+  };
 
 export interface CliRunStats {
   durationMs?: number;
@@ -18,6 +24,12 @@ export interface CliRunStats {
   cacheCreationTokens?: number;
   contextUsedTokens?: number;
   contextWindowTokens?: number;
+}
+
+export interface CliSessionSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
 }
 
 export type CliEvent =
@@ -40,6 +52,7 @@ export interface CliAdapter {
   readonly displayName: string;
   buildArgs(prompt: string): string[];
   buildResumeArgs(prompt: string, sessionId: string): string[];
+  buildCompactPlan(sessionId: string, instructions?: string): CliCompactPlan;
   parseEvents(line: string): CliEvent[];
 }
 
