@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import type { CliId } from '../cli/types.js';
+import type { CliId } from '../cli/type.js';
 import { resolveWorkspacePath } from './workspace.js';
 
 export interface BotConfig {
@@ -10,6 +10,8 @@ export interface BotConfig {
   defaultCliId: CliId;
   systemPrompt: string;
   workspaceDir: string;
+  reviewBy?: string;
+  collaborationMaxRounds: number;
 }
 
 type Environment = Record<string, string | undefined>;
@@ -26,6 +28,11 @@ const BotSchema = z.object({
   defaultCli: z.enum(['claude', 'codex']),
   workspace: z.string().trim().min(1).optional(),
   systemPrompt: z.string().trim().optional().default(''),
+  reviewBy: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{0,31}$/)
+    .optional(),
+  collaborationMaxRounds: z.number().int().min(1).max(4).optional().default(2),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -62,6 +69,8 @@ export function parseBotConfigs(
         appSecret,
         defaultCliId: bot.defaultCli,
         systemPrompt: bot.systemPrompt,
+        reviewBy: bot.reviewBy,
+        collaborationMaxRounds: bot.collaborationMaxRounds,
         workspaceDir: resolveWorkspacePath(
           bot.workspace ?? env.CLI_WORKDIR ?? env.CLAUDE_WORKDIR ?? '.',
           baseDirectory,
@@ -69,6 +78,17 @@ export function parseBotConfigs(
       };
     });
   if (configs.length === 0) throw new Error('至少需要启用一个 bot');
+  const enabledIds = new Set(configs.map((config) => config.id));
+  for (const config of configs) {
+    if (config.reviewBy && !enabledIds.has(config.reviewBy)) {
+      throw new Error(
+        `bot ${config.id} 的 reviewBy 指向未启用的 bot: ${config.reviewBy}`,
+      );
+    }
+    if (config.reviewBy === config.id) {
+      throw new Error(`bot ${config.id} 不能把自己配置为 reviewBy`);
+    }
+  }
   return configs;
 }
 

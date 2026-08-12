@@ -1,4 +1,4 @@
-import type { CliAdapter, CliEvent, CliRunStats } from './types.js';
+import type { CliAdapter, CliEvent, CliRunStats } from './type.js';
 
 interface ClaudeEvent {
   type?: unknown;
@@ -117,6 +117,7 @@ function parseStats(event: ClaudeEvent): CliRunStats | undefined {
 
 function outputArgs(prompt: string): string[] {
   return [
+    '--dangerously-skip-permissions',
     '-p',
     prompt,
     '--output-format',

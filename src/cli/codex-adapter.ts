@@ -1,4 +1,4 @@
-import type { CliAdapter, CliEvent, CliRunStats } from './types.js';
+import type { CliAdapter, CliEvent, CliRunStats } from './type.js';
 
 interface CodexEvent {
   type?: unknown;
@@ -92,9 +92,8 @@ export class CodexAdapter implements CliAdapter {
   buildArgs(prompt: string): string[] {
     return [
       'exec',
+      '--yolo',
       '--json',
-      '--sandbox',
-      'workspace-write',
       '--skip-git-repo-check',
       prompt,
     ];
@@ -104,6 +103,7 @@ export class CodexAdapter implements CliAdapter {
     return [
       'exec',
       'resume',
+      '--yolo',
       '--json',
       '--skip-git-repo-check',
       sessionId,

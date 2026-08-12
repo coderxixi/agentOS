@@ -4,15 +4,18 @@
       "appIdEnv": "DEVELOPER_APP_ID",
       "appSecretEnv": "DEVELOPER_APP_SECRET",
       "defaultCli": "claude",
-      "workspace": ".",
-      "systemPrompt": "你是主力开发助手，负责理解需求并完成实现。"
+      "workspace": "example-project",
+      "systemPrompt": "你是主力开发助手，负责理解需求并完成实现。",
+       "reviewBy": "reviewer",
+       "collaborationMaxRounds": 2
+
     },
     {
       "id": "reviewer",
       "appIdEnv": "REVIEWER_APP_ID",
       "appSecretEnv": "REVIEWER_APP_SECRET",
       "defaultCli": "codex",
-      "workspace": ".",
+      "workspace": "example-project",
       "systemPrompt": "你是审查助手，负责检查实现、发现风险并给出修改建议。",
       "enabled": true
     }
